@@ -1,6 +1,3 @@
-import argparse
-import os
-
 from session import requests_retry_session
 
 BRP_API = 'https://brp.research.chop.edu/api/'

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# python oligo_export.py REDCAP_TOKEN_APITEST BRP_TOKEN
+# python oligo_export.py REDCAP_TOKEN_APITEST BRP_TOKEN 108
 
 import argparse
 import os
@@ -10,7 +10,6 @@ import brp
 import redcap
 
 # DUMMY VALUES
-BRP_PROTOCOL = 108
 ORG = 2
 
 
@@ -39,19 +38,19 @@ def redcap_export(redcap_token):
     treatment_df = link_to_diagnosis(
         redcap.to_df(store, 'Treatment Form', 'instance'), 'tx_dx_link'
     )
-    # update_df = link_to_diagnosis(
-    #     redcap.to_df(store, 'Updates Data Form', 'instance'), 'ux_dx_link'
-    # )
-    # specimen_df = link_to_diagnosis(
-    #     redcap.to_df(store, 'Specimen Only', 'instance'), 'sx_dx_link'
-    # )
-
+    update_df = link_to_diagnosis(
+        redcap.to_df(store, 'Updates Data Form', 'instance'),
+        'update_to_which_dx'
+    )
+    specimen_df = link_to_diagnosis(
+        redcap.to_df(store, 'Specimen Only', 'instance'), 'sx_dx_link'
+    )
     return {
         'subjects': subject_df,
         'diagnoses': diagnosis_df,
         'treatments': treatment_df,
-        # 'updates': update_df,
-        # 'specimens': specimen_df
+        'updates': update_df,
+        'specimens': specimen_df
     }
 
 
@@ -59,11 +58,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         'redcap_token_env_key',
-        help='Env key for fetching the REDCap token (e.g. REDCAP_TOKEN_27084)'
+        help=(
+            'Env key for fetching the REDCap study API token'
+            ' (e.g. REDCAP_TOKEN_27084)'
+        )
     )
     parser.add_argument(
         'brp_token_env_key',
-        help='Env key for fetching the BRP token (e.g. BRP_TOKEN)'
+        help='Env key for fetching the BRP API token (e.g. BRP_TOKEN)'
+    )
+    parser.add_argument(
+        'brp_protocol',
+        help='BRP protocol number for the study'
     )
     args = parser.parse_args()
 
@@ -73,11 +79,20 @@ if __name__ == '__main__':
     rc = redcap_export(redcap_token)
 
     for i, s in rc['subjects'].iterrows():
-        pprint(
-            brp.create_subject(
-                brp_token,
-                BRP_PROTOCOL,
-                ORG, s['mrn'], s['first_name'], s['last_name'], s['dob']
+        print(f'Subject {s["subject"]}')
+        if s.get('enrollment_complete') == 'Complete':
+            print("Submitting... ⏳")
+            pprint(
+                brp.create_subject(
+                    brp_token,
+                    args.brp_protocol,
+                    s.get('organization', ORG), s.get('mrn'),
+                    s.get('first_name'), s.get('last_name'), s.get('dob')
+                )
             )
-        )
-        print()
+        else:
+            print('ENROLLMENT NOT COMPLETE')
+        print('-' * 80)
+
+    print("rc dict keys: " + str(rc.keys()), flush=True)
+    breakpoint()

@@ -1,0 +1,9 @@
+*.swp
+.env
+
+# virtualenv
+.venv
+venv/
+ENV/
+
+__pycache__/

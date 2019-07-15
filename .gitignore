@@ -1,8 +1,9 @@
 *.swp
-.env
+
+# dotfiles and folders
+.*
 
 # virtualenv
-.venv
 venv/
 ENV/
 

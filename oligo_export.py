@@ -1,32 +1,43 @@
 #!/usr/bin/env python
 
-# python oligo_export.py REDCAP_TOKEN_APITEST BRP_TOKEN 108
+# python oligo_export.py REDCAP_TOKEN_27084 BRP_TOKEN 108
 
 import argparse
 import os
 from pprint import pprint
 
-import brp
 import redcap
+from brp import BRP
 
 # DUMMY VALUES
 ORG = 2
 
 
-def redcap_export(redcap_token):
-    records = redcap.get_eav_records(redcap_token)
-    store = redcap.build_store_from_eav_records(records)
+def instrument_df(store, event, instrument, drop_instance=False):
+    df = redcap.to_df(store[event][instrument])
 
-    enrollment_df = redcap.to_df(
-        store, 'Enrollment', 'instance'
-    )
-    demographics_df = redcap.to_df(
-        store, 'Demographics', 'instance'
-    )
-    subject_df = redcap.link(
+    if df.empty:
+        print(f"No data from: '{event}' / '{instrument}'")
+        exit(1)
+
+    if drop_instance:
+        df = df.drop(columns='instance', errors='ignore')
+
+    return df
+
+
+def redcap_export(redcap_token):
+    store = redcap.RedcapStudy(redcap_token).get_records_tree()
+
+    enrollment_df = instrument_df(store, 'Enrollment', '', True)
+    demographics_df = instrument_df(store, 'Demographics', '', True)
+    diagnosis_df = instrument_df(store, 'Diagnoses', 'Diagnosis Form')
+    treatment_df = instrument_df(store, 'Diagnoses', 'Treatment Form', True)
+    update_df = instrument_df(store, 'Diagnoses', 'Updates Data Form', True)
+    specimen_df = instrument_df(store, 'Specimen Only', 'Specimen Only', True)
+    subject_df = redcap.df_link(
         enrollment_df, demographics_df, 'subject', 'subject'
     )
-    diagnosis_df = redcap.to_df(store, 'Diagnosis Form')
 
     def link_to_diagnosis(left, left_on):
         return redcap.new_column_from_linked(
@@ -35,16 +46,11 @@ def redcap_export(redcap_token):
             ' :: '
         )
 
-    treatment_df = link_to_diagnosis(
-        redcap.to_df(store, 'Treatment Form', 'instance'), 'tx_dx_link'
-    )
-    update_df = link_to_diagnosis(
-        redcap.to_df(store, 'Updates Data Form', 'instance'),
-        'update_to_which_dx'
-    )
-    specimen_df = link_to_diagnosis(
-        redcap.to_df(store, 'Specimen Only', 'instance'), 'sx_dx_link'
-    )
+    # maybe do these in the db instead
+    treatment_df = link_to_diagnosis(treatment_df, 'tx_dx_link')
+    update_df = link_to_diagnosis(update_df, 'update_to_which_dx')
+    specimen_df = link_to_diagnosis(specimen_df, 'sx_dx_link')
+
     return {
         'subjects': subject_df,
         'diagnoses': diagnosis_df,
@@ -52,6 +58,40 @@ def redcap_export(redcap_token):
         'updates': update_df,
         'specimens': specimen_df
     }
+
+
+def get_ehb_subjects(brp_token, redcap_subject_df):
+    brp = BRP(brp_token)
+
+    ehb_subjects = {
+        (s['organization'], s['organization_subject_id']): s['id']
+        for s in brp.get_subjects(args.brp_protocol)
+    }
+
+    study_subjects = {}
+    for i, s in redcap_subject_df.iterrows():
+        ident = (s.get('organization', ORG), s.get('mrn'))
+        subj = f'Subject {s["subject"]} {ident}'
+        if s.get('enrollment_complete') == 'Complete':
+            if ident in ehb_subjects:
+                print(f'{subj} already in BRP with id: {ehb_subjects[ident]}')
+                study_subjects[ident] = ehb_subjects[ident]
+            else:
+                print(f'Submitting {subj} to BRP... ⏳')
+                created = brp.create_subject(
+                    args.brp_protocol,
+                    s.get('organization', ORG), s.get('mrn'),
+                    s.get('first_name'), s.get('last_name'), s.get('dob')
+                )
+                pprint(created)
+                created = created['response']
+                if created[0]:
+                    study_subjects[ident] = created[1]['id']
+        else:
+            print(f'{subj} ENROLLMENT NOT COMPLETE')
+        print('-' * 80)
+
+    return study_subjects
 
 
 if __name__ == '__main__':
@@ -76,23 +116,8 @@ if __name__ == '__main__':
     redcap_token = os.getenv(args.redcap_token_env_key)
     brp_token = os.getenv(args.brp_token_env_key)
 
-    rc = redcap_export(redcap_token)
+    rc_data = redcap_export(redcap_token)
+    ehb_subjects = get_ehb_subjects(brp_token, rc_data['subjects'])
 
-    for i, s in rc['subjects'].iterrows():
-        print(f'Subject {s["subject"]}')
-        if s.get('enrollment_complete') == 'Complete':
-            print("Submitting... ⏳")
-            pprint(
-                brp.create_subject(
-                    brp_token,
-                    args.brp_protocol,
-                    s.get('organization', ORG), s.get('mrn'),
-                    s.get('first_name'), s.get('last_name'), s.get('dob')
-                )
-            )
-        else:
-            print('ENROLLMENT NOT COMPLETE')
-        print('-' * 80)
-
-    print("rc dict keys: " + str(rc.keys()), flush=True)
+    print('rc_data dict keys: ' + str(rc_data.keys()), flush=True)
     breakpoint()

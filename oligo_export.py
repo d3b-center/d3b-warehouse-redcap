@@ -8,9 +8,11 @@ from pprint import pprint
 
 import redcap
 from brp import BRP
+from config import config
+from nautilus import get_nautilus_data
 
 # DUMMY VALUES
-ORG = 2
+ORG = 52
 
 
 def instrument_df(store, event, instrument, drop_instance=False):
@@ -111,13 +113,24 @@ if __name__ == '__main__':
         'brp_protocol',
         help='BRP protocol number for the study'
     )
+    parser.add_argument(
+        'naut_irb_protocol',
+        help='IRB protocol number for the study in '
+        'the Nautilus (e.g. NAUTILUS_IRB_NUMBER)'
+    )
     args = parser.parse_args()
 
     redcap_token = os.getenv(args.redcap_token_env_key)
     brp_token = os.getenv(args.brp_token_env_key)
+    nautilus_irb = os.getenv(args.naut_irb_protocol)
 
     rc_data = redcap_export(redcap_token)
     ehb_subjects = get_ehb_subjects(brp_token, rc_data['subjects'])
-
     print('rc_data dict keys: ' + str(rc_data.keys()), flush=True)
+
+    # Read connection Parameters
+    params = config()
+    sample_information = get_nautilus_data(params, nautilus_irb)
+    print(sample_information.count())
+
     breakpoint()

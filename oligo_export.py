@@ -8,8 +8,10 @@ from pprint import pprint
 
 import redcap
 from brp import BRP
-from config import config
+from config import config, datawarehouseconfig
 from nautilus import get_nautilus_data
+import pandas as pd
+from sqlalchemy import create_engine
 
 # DUMMY VALUES
 ORG = 52
@@ -36,10 +38,10 @@ def redcap_export(redcap_token):
     diagnosis_df = instrument_df(store, 'Diagnoses', 'Diagnosis Form')
     treatment_df = instrument_df(store, 'Diagnoses', 'Treatment Form', True)
     update_df = instrument_df(store, 'Diagnoses', 'Updates Data Form', True)
-    specimen_df = instrument_df(store, 'Specimen Only', 'Specimen Only', True)
-    subject_df = redcap.df_link(
-        enrollment_df, demographics_df, 'subject', 'subject'
-    )
+    specimen_df = instrument_df(store, 'Specimen', 'Specimen', True)
+    # subject_df = redcap.df_link(
+    #     enrollment_df, demographics_df, 'subject', 'subject'
+    # )
 
     def link_to_diagnosis(left, left_on):
         return redcap.new_column_from_linked(
@@ -54,7 +56,8 @@ def redcap_export(redcap_token):
     specimen_df = link_to_diagnosis(specimen_df, 'sx_dx_link')
 
     return {
-        'subjects': subject_df,
+        'subjects': enrollment_df,
+        'demographics': demographics_df,
         'diagnoses': diagnosis_df,
         'treatments': treatment_df,
         'updates': update_df,
@@ -64,7 +67,7 @@ def redcap_export(redcap_token):
 
 def get_ehb_subjects(brp_token, redcap_subject_df):
     brp = BRP(brp_token)
-
+    print(redcap_subject_df.count())
     ehb_subjects = {
         (s['organization'], s['organization_subject_id']): s['id']
         for s in brp.get_subjects(args.brp_protocol)
@@ -77,7 +80,8 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
         if s.get('enrollment_complete') == 'Complete':
             if ident in ehb_subjects:
                 print(f'{subj} already in BRP with id: {ehb_subjects[ident]}')
-                study_subjects[ident] = ehb_subjects[ident]
+                # study_subjects[ident] = ehb_subjects[ident]
+                study_subjects[s["subject"]] = ehb_subjects[ident]
             else:
                 print(f'Submitting {subj} to BRP... ⏳')
                 created = brp.create_subject(
@@ -88,7 +92,9 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
                 pprint(created)
                 created = created['response']
                 if created[0]:
-                    study_subjects[ident] = created[1]['id']
+                    # study_subjects[ident] = created[1]['id']
+                    study_subjects[s["subject"]] = created[1]['id']
+
         else:
             print(f'{subj} ENROLLMENT NOT COMPLETE')
         print('-' * 80)
@@ -125,12 +131,36 @@ if __name__ == '__main__':
     nautilus_irb = os.getenv(args.naut_irb_protocol)
 
     rc_data = redcap_export(redcap_token)
+
     ehb_subjects = get_ehb_subjects(brp_token, rc_data['subjects'])
+    ehb_subjects = pd.DataFrame(list(ehb_subjects.items()),
+                                columns=['subject', 'ehb_id'])
     print('rc_data dict keys: ' + str(rc_data.keys()), flush=True)
 
     # Read connection Parameters
     params = config()
     sample_information = get_nautilus_data(params, nautilus_irb)
-    print(sample_information.count())
+
+    # Writing to Dataware datawarehouse
+    uri = datawarehouseconfig()
+    engine = create_engine(uri)
+    # ehb subjects
+    ehb_subjects.to_sql('ehb_subject', engine,  if_exists='replace',
+                        index=False)
+    # demographics
+    rc_data['demographics'].to_sql('demographics', engine,
+                                   if_exists='replace',
+                                   index=False)
+    # Diagnoses
+    rc_data['diagnoses'].to_sql('diagnosis', engine,  if_exists='replace',
+                                index=False)
+    rc_data['diagnoses'].to_sql('update', engine,  if_exists='replace',
+                                index=False)
+    rc_data['treatments'].to_sql('treatment', engine,  if_exists='replace',
+                                 index=False)
+    rc_data['specimens'].to_sql('specimen', engine,  if_exists='replace',
+                                index=False)
+    sample_information.to_sql('sample_information',
+                              engine, if_exists='replace', index=False)
 
     breakpoint()

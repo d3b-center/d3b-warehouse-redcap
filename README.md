@@ -1,6 +1,11 @@
 # d3b-redcap
 Holder for redcap project code and formats
 
+#Running the Docker in local machine
+docker run --name d3b-warehouse-pg -p 5432:5432 -d postgres:9.5
+
+#create local d
+docker exec d3b-warehouse-pg psql -U postgres -c "CREATE DATABASE dev;"
 
 ### Exporting redcap+brp/ehb data
 

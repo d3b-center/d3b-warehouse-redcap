@@ -32,6 +32,9 @@ def instrument_df(store, event, instrument, drop_instance=False):
 
 def redcap_export(redcap_token):
     store = redcap.RedcapStudy(redcap_token).get_records_tree()
+    project = redcap.RedcapStudy(redcap_token)._get_project_info()
+    project = pd.DataFrame(list(project.values()),
+                           index=list(project.keys())).transpose()
 
     enrollment_df = instrument_df(store, 'Enrollment', '', True)
     demographics_df = instrument_df(store, 'Demographics', '', True)
@@ -39,9 +42,6 @@ def redcap_export(redcap_token):
     treatment_df = instrument_df(store, 'Diagnoses', 'Treatment Form', True)
     update_df = instrument_df(store, 'Diagnoses', 'Updates Data Form', True)
     specimen_df = instrument_df(store, 'Specimen', 'Specimen', True)
-    # subject_df = redcap.df_link(
-    #     enrollment_df, demographics_df, 'subject', 'subject'
-    # )
 
     def link_to_diagnosis(left, left_on):
         return redcap.new_column_from_linked(
@@ -56,6 +56,7 @@ def redcap_export(redcap_token):
     specimen_df = link_to_diagnosis(specimen_df, 'sx_dx_link')
 
     return {
+        'project_info': project,
         'subjects': enrollment_df,
         'demographics': demographics_df,
         'diagnoses': diagnosis_df,
@@ -80,7 +81,6 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
         if s.get('enrollment_complete') == 'Complete':
             if ident in ehb_subjects:
                 print(f'{subj} already in BRP with id: {ehb_subjects[ident]}')
-                # study_subjects[ident] = ehb_subjects[ident]
                 study_subjects[s["subject"]] = ehb_subjects[ident]
             else:
                 print(f'Submitting {subj} to BRP... ⏳')
@@ -92,7 +92,6 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
                 pprint(created)
                 created = created['response']
                 if created[0]:
-                    # study_subjects[ident] = created[1]['id']
                     study_subjects[s["subject"]] = created[1]['id']
 
         else:
@@ -128,6 +127,7 @@ if __name__ == '__main__':
 
     redcap_token = os.getenv(args.redcap_token_env_key)
     brp_token = os.getenv(args.brp_token_env_key)
+    brp_protocol = os.getenv(args.brp_protocol)
     nautilus_irb = os.getenv(args.naut_irb_protocol)
 
     rc_data = redcap_export(redcap_token)
@@ -141,26 +141,35 @@ if __name__ == '__main__':
     params = config()
     sample_information = get_nautilus_data(params, nautilus_irb)
 
-    # Writing to Dataware datawarehouse
+    # Writing to datawarehouse
     uri = datawarehouseconfig()
     engine = create_engine(uri)
+
     # ehb subjects
-    ehb_subjects.to_sql('ehb_subject', engine,  if_exists='replace',
+    rc_data['project_info'].to_sql('project_info', engine,  if_exists='append',
+                                   index=False)
+    project_id = rc_data['project_info'].project_id.unique()[0]
+    # ehb subjects
+    ehb_subjects.to_sql('{}_ehb_subject'.format(project_id), engine,
+                        if_exists='replace',
                         index=False)
     # demographics
-    rc_data['demographics'].to_sql('demographics', engine,
+    rc_data['demographics'].to_sql('{}_demographics'.format(project_id),
+                                   engine,
                                    if_exists='replace',
                                    index=False)
     # Diagnoses
-    rc_data['diagnoses'].to_sql('diagnosis', engine,  if_exists='replace',
+    rc_data['diagnoses'].to_sql('{}_diagnosis'.format(project_id),
+                                engine,  if_exists='replace',
                                 index=False)
-    rc_data['diagnoses'].to_sql('update', engine,  if_exists='replace',
-                                index=False)
-    rc_data['treatments'].to_sql('treatment', engine,  if_exists='replace',
+    rc_data['updates'].to_sql('{}_update'.format(project_id),
+                              engine,  if_exists='replace',
+                              index=False)
+    rc_data['treatments'].to_sql('{}_treatment'.format(project_id),
+                                 engine,  if_exists='replace',
                                  index=False)
-    rc_data['specimens'].to_sql('specimen', engine,  if_exists='replace',
+    rc_data['specimens'].to_sql('{}_specimen'.format(project_id),
+                                engine,  if_exists='replace',
                                 index=False)
     sample_information.to_sql('sample_information',
-                              engine, if_exists='replace', index=False)
-
-    breakpoint()
+                              engine, if_exists='append', index=False)

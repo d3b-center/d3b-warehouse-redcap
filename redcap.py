@@ -6,6 +6,7 @@ import pandas
 from session import requests_retry_session
 
 REDCAP_API = 'https://redcap.chop.edu/api/'
+# REDCAP_API = 'https://redcap.stanford.edu/api/'
 
 
 class RedcapStudy:
@@ -24,6 +25,9 @@ class RedcapStudy:
         return requests_retry_session().post(
             REDCAP_API, data=params
         ).json()
+
+    def _get_project_info(self):
+        return self._get_json('project')
 
     def _get_repeat_instruments(self):
         return {v['form_name'] for v in self._get_json('repeatingFormsEvents')}
@@ -65,7 +69,7 @@ class RedcapStudy:
         repeat_instruments = self._get_repeat_instruments()
         ie_mappings = self._get_instrument_event_mappings()
         store = defaultdict(  # forms
-                dict          # field value maps
+            dict          # field value maps
         )
         for m in metadata:
             instrument = m['form_name']
@@ -117,18 +121,32 @@ class RedcapStudy:
                 )
             )
         )
+        store2 = defaultdict(                  # events
+            lambda: defaultdict(          # subjects
+                lambda: defaultdict(  # field names
+                    set               # values
+                )
+            )
+        )
+
         for r in self._get_eav_records():
             event = r['redcap_event_name']
-            instrument = r['redcap_repeat_instrument']
+            repeat_instruments = True
             subject = r['record']
-            # The API will return 1, '2', for repeat instances.
-            # Note that 1 was an int and 2 was a str.
-            instance = str(r['redcap_repeat_instance'] or '1')
             field = r['field_name']
             value = r['value']
-            if field != 'study_id':
-                store[event][instrument][subject][instance][field].add(value)
-
+            if repeat_instruments:
+                instrument = r['redcap_repeat_instrument']
+                # The API will return 1, '2', for repeat instances.
+                # Note that 1 was an int and 2 was a str.
+                instance = str(r['redcap_repeat_instance'] or '1')
+                if field != 'study_id':
+                    store[event][instrument][subject][instance][field].add(
+                        value)
+            else:
+                if field != 'study_id':
+                    store2[event][subject][field].add(value)
+                    store = store2
         return store
 
 

@@ -1,17 +1,11 @@
-# d3b-redcap
-Holder for redcap project code and formats
+# D3b Data Warehouse
 
-#Running the Docker in local machine
-docker run --name d3b-warehouse-pg -p 5432:5432 -d postgres:9.5
+The D3b Data Warehouse extracts clinical data from REDCap, de-identifies it via BRP, extracts specimen information from Nautilus, and store them all into PostgreSQL.
+Metabase is also available for custom query and dashboard creation, running against PostgreSQL. 
 
-#create local d
-docker exec d3b-warehouse-pg psql -U postgres -c "CREATE DATABASE dev;"
+## Getting Started
 
-### Exporting redcap+brp/ehb data
-
-Set environment variables for your REDCap and BRP tokens, and then do:
-
-`> python oligo_export.py REDCAP_TOKEN_ENV_KEY BRP_TOKEN_ENV_KEY BRP_PROTOCOL NAUTILUS_IRB_NUMBER`
-
-The test BRP protocol is 108.
-NAUTILUS_IRB_NUMBER is the registered IRB protocol number for a study. For example, CBTTC has 7316
+1. Create a `compose.env` using `.env.schema` with corresponding credentials. 
+2. The test BRP protocol is preset to 108. To change this, modify `./scripts/run.sh` with a proper protocol.
+3. Make sure Docker and Docker Compose are installed, then run: `docker-compose up --build`
+4. Once spun up, Metabase is available at `localhost:3000`.

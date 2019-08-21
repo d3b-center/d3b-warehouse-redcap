@@ -6,6 +6,5 @@ Metabase is also available for custom query and dashboard creation, running agai
 ## Getting Started
 
 1. Create a `compose.env` using `.env.schema` with corresponding credentials. 
-2. The test BRP protocol is preset to 108. To change this, modify `./scripts/run.sh` with a proper protocol.
-3. Make sure Docker and Docker Compose are installed, then run: `docker-compose up --build`
-4. Once spun up, Metabase is available at `localhost:3000`.
+2. Make sure Docker and Docker Compose are installed, then run: `docker-compose up --build`
+3. Once spun up, Metabase is available at `localhost:3000`.

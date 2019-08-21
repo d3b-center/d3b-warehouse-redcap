@@ -42,11 +42,6 @@ def redcap_export(redcap_token):
     treatment_df = instrument_df(store, 'Diagnoses', 'Treatment Form', True)
     update_df = instrument_df(store, 'Diagnoses', 'Updates Data Form', True)
     specimen_df = instrument_df(store, 'Specimen', 'Specimen', True)
-    '''
-    subject_df = redcap.df_link(
-        enrollment_df, demographics_df, 'subject', 'subject'
-    )
-    '''
 
     def link_to_diagnosis(left, left_on):
         return redcap.new_column_from_linked(

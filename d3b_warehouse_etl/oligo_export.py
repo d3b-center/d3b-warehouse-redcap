@@ -71,7 +71,7 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
     print(redcap_subject_df.count())
     ehb_subjects = {
         (s['organization'], s['organization_subject_id']): s['id']
-        for s in brp.get_subjects(args.brp_protocol)
+        for s in brp.get_subjects(brp_protocol)
     }
 
     study_subjects = {}
@@ -85,7 +85,7 @@ def get_ehb_subjects(brp_token, redcap_subject_df):
             else:
                 print(f'Submitting {subj} to BRP... ⏳')
                 created = brp.create_subject(
-                    args.brp_protocol,
+                    brp_protocol,
                     s.get('organization', ORG), s.get('mrn'),
                     s.get('first_name'), s.get('last_name'), s.get('dob')
                 )
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         'brp_protocol',
-        help='BRP protocol number for the study'
+        help='BRP protocol number for the study (e.g. BRP_PROTOCOL)'
     )
     parser.add_argument(
         'naut_irb_protocol',

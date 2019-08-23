@@ -107,21 +107,29 @@ if __name__ == '__main__':
         'redcap_token_env_key',
         help=(
             'Env key for fetching the REDCap study API token'
-            ' (e.g. REDCAP_TOKEN_27084)'
+            ' (e.g. REDCAP_TOKEN_ENV_KEY)'
         )
     )
     parser.add_argument(
         'brp_token_env_key',
-        help='Env key for fetching the BRP API token (e.g. BRP_TOKEN)'
+        help=(
+            'Env key for fetching the BRP API token'
+            ' (e.g. BRP_TOKEN)'
+        )
     )
     parser.add_argument(
         'brp_protocol',
-        help='BRP protocol number for the study (e.g. BRP_PROTOCOL)'
+        help=(
+            'Env key for fetching the BRP protocol number for the study'
+            ' (e.g. BRP_PROTOCOL)'
+        )
     )
     parser.add_argument(
         'naut_irb_protocol',
-        help='IRB protocol number for the study in '
-        'the Nautilus (e.g. NAUTILUS_IRB_NUMBER)'
+        help=(
+            'Env key for fetching the IRB protocol number for the study' 
+            ' in the Nautilus (e.g. NAUTILUS_IRB_NUMBER)'
+        )
     )
     args = parser.parse_args()
 

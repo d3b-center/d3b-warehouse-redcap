@@ -8,7 +8,7 @@ from pprint import pprint
 
 import redcap
 from brp import BRP
-from config import config, datawarehouseconfig
+from config import datawarehouse_config as dwconf
 from nautilus import get_nautilus_data
 import pandas as pd
 from sqlalchemy import create_engine
@@ -138,12 +138,15 @@ if __name__ == '__main__':
     print('rc_data dict keys: ' + str(rc_data.keys()), flush=True)
 
     # Read connection Parameters
-    params = config()
-    sample_information = get_nautilus_data(params, nautilus_irb)
+    sample_information = get_nautilus_data(nautilus_irb)
 
     # Writing to datawarehouse
-    uri = datawarehouseconfig()
-    engine = create_engine(uri)
+    engine = create_engine(
+        'postgres://{}:{}@{}:{}/{}'.format(
+            dwconf['user'], dwconf['password'], dwconf['host'], dwconf['port'],
+            dwconf['dbname']
+        )
+    )
 
     # ehb subjects
     rc_data['project_info'].to_sql('project_info', engine,  if_exists='append',

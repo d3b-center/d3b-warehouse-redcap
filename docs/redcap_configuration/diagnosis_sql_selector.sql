@@ -4,9 +4,9 @@ recorded in the diagnosis fields named date_of_initial_diagnosis,
 diagnosis_type, and init_path_diag with " :: " as a delimiter between them.
 */
 
-SET @project_id = 27084;           -- YOU MUST CUSTOMIZE THIS
-SET @diagnosis_event_id = 330599;  -- YOU MUST CUSTOMIZE THIS
 SET @this_record = [record-name];  -- This is a REDCap smart variable
+SET @project_id = [project-id];    -- This is a REDCap smart variable
+SET @diagnosis_event_id = 330599;  -- YOU MUST CUSTOMIZE THIS
 
 SELECT MAX(IF(a.instance IS NULL, "1", a.instance)) AS raw_value_repeating_instance, CONCAT_WS(
         " ",

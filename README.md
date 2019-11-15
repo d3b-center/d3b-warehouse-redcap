@@ -1,6 +1,6 @@
-# D3b Data Warehouse
+# D3b Warehouse REDCap
 
-The D3b Data Warehouse extracts clinical data from REDCap, de-identifies it via BRP, extracts specimen information from Nautilus, and store them all into PostgreSQL.
+The D3b Warehouse REDCAP extracts clinical data from REDCap, de-identifies it via BRP, extracts specimen information from Nautilus, and store them all into PostgreSQL.
 Metabase is also available for custom query and dashboard creation, running against PostgreSQL. 
 
 ## Getting Started

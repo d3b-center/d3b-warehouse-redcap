@@ -1,10 +1,18 @@
-# D3b Warehouse REDCap
+# D3b REDCap Warehouser
 
-The D3b Warehouse REDCAP extracts clinical data from REDCap, de-identifies it via BRP, extracts specimen information from Nautilus, and store them all into PostgreSQL.
-Metabase is also available for custom query and dashboard creation, running against PostgreSQL. 
+## Purpose
 
-## Getting Started
+1. Extracts clinical data from REDCap
+1. De-identifies it via BRP-eHB
+1. (NOT YET IMPLEMENTED) Extracts specimen information from Nautilus
+1. Stores everything into a warehouse database.
 
-1. Create a `compose.env` using `.env.schema` with corresponding credentials. 
-2. Make sure Docker and Docker Compose are installed, then run: `docker-compose up --build`
-3. Once spun up, Metabase is available at `localhost:3000`.
+## Known invocations
+
+
+### Oligo Nation, REDCap project 27084, BRP protocol 159, eHB organization 102
+
+`python warehouse_project.py REDCAP_TOKEN_27084 BRP_TOKEN 159
+D3B_WAREHOUSE_DB_URL CID_MAGIC_NUMBER --redcap_api https://redcap.chop.edu/api/
+--redcap_organization_override_value 102 --redact_redcap_field description_of_chemotherap
+--redact_redcap_field other_rad_treat --redact_redcap_field describe_predis`

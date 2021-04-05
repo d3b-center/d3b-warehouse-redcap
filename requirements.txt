@@ -1,5 +1,6 @@
 d3b_redcap_api @ git+https://github.com/d3b-center/d3b-redcap-api-python.git
 d3b_utils @ git+https://github.com/d3b-center/d3b-utils-python.git
+requests
 pandas==1.2.3
 numpy==1.20.2
 psycopg2-binary==2.8.6

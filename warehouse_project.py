@@ -22,7 +22,7 @@ RC_ORG_OVERRIDE = None
 CID_MAGIC_NUMBER = None
 
 
-def redcap_subjects_to_CIDs(redcap_dfs, brp_token, brp_protocol):
+def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
     """Replace REDCap DataFrame subject IDs with CIDs from the BRP-eHB"""
     rc_subjects = redcap_dfs[RC_ENROLLMENT_FORM]
     subject_fields = [
@@ -41,7 +41,7 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_token, brp_protocol):
             f"\t{subject_fields}"
         )
 
-    brp = BRP(brp_token)
+    brp = BRP(brp_api_url, brp_token)
 
     ehb_subjects = {
         (bs["organization"], bs["organization_subject_id"]): bs["id"]
@@ -157,22 +157,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "brp_protocol", help="BRP protocol number for the study"
     )
-    # parser.add_argument(
-    #     "nautilus_irb_protocol",
-    #     help="IRB protocol number for the study in the Nautilus"
-    # )
-    parser.add_argument(
-        "warehouse_url_env_key",
-        help='Environment key storing authenticated warehouse url (e.g. "D3B_WAREHOUSE_DB_URL")',
-    )
     parser.add_argument(
         "cid_magic_number_env_key",
         help="Environment key storing magic number for generating CIDs",
     )
+    parser.add_argument(
+        "warehouse_url_env_key",
+        help='Environment key storing authenticated warehouse url (e.g. "D3B_WAREHOUSE_DB_URL")',
+    )
 
     # optional arguments
     parser.add_argument(
-        "--redcap_api",
+        "--redcap_api_url",
         required=False,
         default="https://redcap-api.chop.edu/api/",
         help=(
@@ -180,6 +176,12 @@ if __name__ == "__main__":
             " works inside the CHOP network, but"
             " redcap.chop.edu is less reliable."
         ),
+    )
+    parser.add_argument(
+        "--brp_api_url",
+        required=False,
+        default="https://brp.research.chop.edu/api/",
+        help="BRP API url",
     )
     parser.add_argument(
         "--redcap_enrollment_form",
@@ -231,11 +233,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    redcap_api_url = args.redcap_api_url
     redcap_token = os.getenv(args.redcap_token_env_key)
+    brp_api_url = args.brp_api_url
     brp_token = os.getenv(args.brp_token_env_key)
     brp_protocol = args.brp_protocol
-    warehouse_url = os.getenv(args.warehouse_url_env_key)
     CID_MAGIC_NUMBER = int(os.getenv(args.cid_magic_number_env_key))
+    warehouse_url = os.getenv(args.warehouse_url_env_key)
 
     RC_ENROLLMENT_FORM = args.redcap_enrollment_form
     RC_FIRSTNAME_FIELD = args.redcap_firstname_field
@@ -250,7 +254,7 @@ if __name__ == "__main__":
     # The redcap-api subdomain is only available inside the chop network but
     # the default redcap.chop.edu is less reliable, so we're just going to
     # require you to be inside the network for this.
-    r = REDCapStudy(args.redcap_api, redcap_token)
+    r = REDCapStudy(redcap_api_url, redcap_token)
     records_tree, errors = r.get_records_tree()
     if errors:
         print(errors)
@@ -260,7 +264,7 @@ if __name__ == "__main__":
 
     # de-identify and redact
 
-    redcap_subjects_to_CIDs(redcap_dfs, brp_token, brp_protocol)
+    redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol)
     redcap_dates_to_days(redcap_dfs, r.get_data_dictionary())
 
     del redcap_dfs[RC_ENROLLMENT_FORM]

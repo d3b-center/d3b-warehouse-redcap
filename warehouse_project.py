@@ -2,11 +2,13 @@
 import argparse
 import os
 import sys
+from datetime import datetime
 
 from d3b_redcap_api.df_utils import all_dfs
 from d3b_redcap_api.redcap import REDCapStudy
+from dateutil import relativedelta
 from numpy import isnan
-from pandas import DataFrame, to_datetime
+from pandas import DataFrame, notnull, to_datetime
 from sqlalchemy import create_engine, schema
 
 from d3b_warehouse_redcap.brp import BRP
@@ -81,16 +83,12 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
 
     # Map subject to CID
     for df in redcap_dfs.values():
-        df["subject"] = df["subject"].map(CID_map)
+        df["CID"] = df["subject"].map(CID_map)
 
 
-def redcap_dates_to_days(redcap_dfs, redcap_data_dictionary):
-    """Replace REDCap DataFrame date fields with ages using enrollment DOB"""
-    date_fields = [
-        d["field_name"]
-        for d in redcap_data_dictionary
-        if "date" in d["text_validation_type_or_show_slider_number"]
-    ]
+def redcap_safe_dates(redcap_dfs, date_fields):
+    """For subjects younger than 90, extract just years from REDCap DataFrame
+    date fields and also convert to ages in days using enrollment DOB."""
     dobs = {
         e["subject"]: to_datetime(e[RC_DOB_FIELD], errors="coerce")
         for e in redcap_dfs[RC_ENROLLMENT_FORM][
@@ -98,10 +96,16 @@ def redcap_dates_to_days(redcap_dfs, redcap_data_dictionary):
         ].to_dict(orient="records")
     }
 
-    def days_if_possible(a, b):
-        days = (a - b).days
+    def date_to_age_days(birthdate, date):
+        days = (date - birthdate).days
         if not isnan(days):
             return f"{days} days"
+        else:
+            return None
+
+    def discard_if_too_old(birthdate, x):
+        if relativedelta.relativedelta(datetime.now(), birthdate).years < 90:
+            return x
         else:
             return None
 
@@ -110,11 +114,16 @@ def redcap_dates_to_days(redcap_dfs, redcap_data_dictionary):
             if f in df:
                 df[f] = to_datetime(df[f], errors="coerce")
                 df[f] = df.apply(
-                    lambda r: days_if_possible(r[f], dobs[r["subject"]]), axis=1
+                    lambda r: discard_if_too_old(dobs[r["subject"]], r[f]),
+                    axis=1,
+                )
+                df[f + "_year"] = df[f].apply(lambda x: x.year)
+                df[f + "_as_age"] = df.apply(
+                    lambda r: date_to_age_days(dobs[r["subject"]], r[f]), axis=1
                 )
 
 
-def submit_to_warehouse(warehouse_url, schema_name, redcap_dfs):
+def submit_to_warehouse(warehouse_url, schema_name, dfs):
     """Send our DataFrames to the warehouse DB"""
     db_engine = create_engine(warehouse_url)
 
@@ -130,6 +139,7 @@ def submit_to_warehouse(warehouse_url, schema_name, redcap_dfs):
             if_exists="replace",
             schema=schema_name,
             method="multi",
+            chunksize=10000,
         )
 
 
@@ -251,11 +261,8 @@ if __name__ == "__main__":
 
     # read from redcap
 
-    # The redcap-api subdomain is only available inside the chop network but
-    # the default redcap.chop.edu is less reliable, so we're just going to
-    # require you to be inside the network for this.
-    r = REDCapStudy(redcap_api_url, redcap_token)
-    records_tree, errors = r.get_records_tree()
+    rs = REDCapStudy(redcap_api_url, redcap_token)
+    records_tree, errors = rs.get_records_tree()
     if errors:
         print(errors)
         sys.exit()
@@ -263,20 +270,45 @@ if __name__ == "__main__":
     redcap_dfs = all_dfs(records_tree)
 
     # de-identify and redact
+    data_dictionary = rs.get_data_dictionary()
 
+    date_fields = [
+        d["field_name"]
+        for d in data_dictionary
+        if "date" in d["text_validation_type_or_show_slider_number"]
+    ]
     redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol)
-    redcap_dates_to_days(redcap_dfs, r.get_data_dictionary())
+    redcap_safe_dates(redcap_dfs, date_fields)
 
-    del redcap_dfs[RC_ENROLLMENT_FORM]
-    for field in args.redact_redcap_field:
+    fields_to_redact = set(
+        [f["field_name"] for f in data_dictionary if f["identifier"]]
+        + date_fields
+        + args.redact_redcap_field
+        + [
+            RC_FIRSTNAME_FIELD,
+            RC_LASTNAME_FIELD,
+            RC_DOB_FIELD,
+            RC_ORG_ID_FIELD,
+            RC_ORG_FIELD,
+        ]
+    )
+
+    redactions = []
+    for field in fields_to_redact:
         for instrument in redcap_dfs:
             if field in redcap_dfs[instrument]:
-                print(f"Redacting {instrument}.{field}")
+                redactions.append(f"Redacting {instrument}.{field}")
                 del redcap_dfs[instrument][field]
+
+    for red in sorted(redactions):
+        print(red)
+
+    for k, df in redcap_dfs.items():
+        redcap_dfs[k] = df.where(notnull(df), None).convert_dtypes()
 
     # submit data to warehouse
 
-    project_info = r.get_project_info()
+    project_info = rs.get_project_info()
     db_schema_name = f"redcap_{project_info['project_id']}"
     redcap_dfs["redcap_project_info"] = DataFrame.from_dict([project_info])
     submit_to_warehouse(warehouse_url, db_schema_name, redcap_dfs)

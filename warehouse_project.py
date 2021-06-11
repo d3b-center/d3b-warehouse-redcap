@@ -256,7 +256,8 @@ if __name__ == "__main__":
     RC_LASTNAME_FIELD = args.redcap_lastname_field
     RC_DOB_FIELD = args.redcap_dob_field
     RC_ORG_FIELD = args.redcap_organization_field
-    RC_ORG_OVERRIDE = int(args.redcap_organization_override_value)
+    if args.redcap_organization_override_value:
+        RC_ORG_OVERRIDE = int(args.redcap_organization_override_value)
     RC_ORG_ID_FIELD = args.redcap_id_within_organization_field
 
     # read from redcap

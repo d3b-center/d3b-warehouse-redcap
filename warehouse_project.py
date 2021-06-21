@@ -53,7 +53,7 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
     # Build mapping from redcap subject to CID
     CID_map = {}
     for i, rs in rc_subjects.iterrows():
-        ident = (rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE), rs.get(RC_ORG_ID_FIELD))
+        ident = (int(rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)), rs.get(RC_ORG_ID_FIELD))
         if (None not in ident) and (
             rs.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
         ):
@@ -65,7 +65,7 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
                 print(f'Submitting subject {rs["subject"]} to BRP-eHB... ⏳')
                 created = brp.create_subject(
                     brp_protocol,
-                    rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE),
+                    int(rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
                     rs.get(RC_ORG_ID_FIELD),
                     rs.get(RC_FIRSTNAME_FIELD),
                     rs.get(RC_LASTNAME_FIELD),
@@ -278,7 +278,24 @@ if __name__ == "__main__":
         for d in data_dictionary
         if "date" in d["text_validation_type_or_show_slider_number"]
     ]
+
+    # The BRP wants raw org values, not readable ones, so we need to swap those.
+    raw2org = rs.get_selector_choice_map().get(RC_ORG_FIELD, {})
+    org2raw = {v: k for k, v in raw2org.items()}
+    if org2raw:
+        for df in redcap_dfs.values():
+            if RC_ORG_FIELD in df:
+                df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(org2raw)
+
+    # Send new subjects to the BRP to get their CIDs.
     redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol)
+
+    # Now swap the orgs back.
+    if raw2org:
+        for df in redcap_dfs.values():
+            if RC_ORG_FIELD in df:
+                df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(raw2org)
+
     redcap_safe_dates(redcap_dfs, date_fields)
 
     fields_to_redact = set(

@@ -26,22 +26,36 @@ CID_MAGIC_NUMBER = None
 
 def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
     """Replace REDCap DataFrame subject IDs with CIDs from the BRP-eHB"""
-    rc_subjects = redcap_dfs[RC_ENROLLMENT_FORM]
-    subject_fields = [
+    subject_fields = {
         RC_ORG_FIELD,
         RC_ORG_ID_FIELD,
         RC_FIRSTNAME_FIELD,
         RC_LASTNAME_FIELD,
         RC_DOB_FIELD,
-    ]
+        f"{RC_ENROLLMENT_FORM}_complete",
+    }
     if RC_ORG_OVERRIDE is not None:
         subject_fields.remove(RC_ORG_FIELD)
-    for f in subject_fields:
-        assert f in rc_subjects, (
-            "We can't use the BRP-eHB API without the right REDCap enrollment"
-            " fields. Are these correct?\n"
-            f"\t{subject_fields}"
-        )
+
+    rc_subjects = {}
+    found_fields = set()
+    try:
+        for df in redcap_dfs.values():
+            for field in subject_fields:
+                if field in df:
+                    for r in df[["subject", field]].to_records(index=False):
+                        rc_subjects.setdefault(r[0], {})[field] = r[1]
+                    found_fields.add(field)
+                    if found_fields == subject_fields:
+                        raise StopIteration
+    except StopIteration:
+        pass
+
+    assert found_fields == subject_fields, (
+        "We can't use the BRP-eHB API without the right REDCap enrollment"
+        " fields. Are these correct?\n"
+        f"\t{subject_fields}"
+    )
 
     brp = BRP(brp_api_url, brp_token)
 
@@ -52,34 +66,34 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
 
     # Build mapping from redcap subject to CID
     CID_map = {}
-    for i, rs in rc_subjects.iterrows():
-        ident = (int(rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)), rs.get(RC_ORG_ID_FIELD))
+    for subject, r in rc_subjects.items():
+        ident = (int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)), r.get(RC_ORG_ID_FIELD))
         if (None not in ident) and (
-            rs.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
+            r.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
         ):
             if ident in ehb_subjects:  # Subject already in BRP-eHB
-                print(f'Subject {rs["subject"]} already in BRP-eHB')
+                print(f'Subject {subject} already in BRP-eHB')
                 id = ehb_subjects[ident]
-                CID_map[rs["subject"]] = f"C{CID_MAGIC_NUMBER*int(id)}"
+                CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
             else:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
-                print(f'Submitting subject {rs["subject"]} to BRP-eHB... ⏳')
+                print(f'Submitting subject {subject} to BRP-eHB... ⏳')
                 created = brp.create_subject(
                     brp_protocol,
-                    int(rs.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
-                    rs.get(RC_ORG_ID_FIELD),
-                    rs.get(RC_FIRSTNAME_FIELD),
-                    rs.get(RC_LASTNAME_FIELD),
-                    rs.get(RC_DOB_FIELD),
+                    int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
+                    r.get(RC_ORG_ID_FIELD),
+                    r.get(RC_FIRSTNAME_FIELD),
+                    r.get(RC_LASTNAME_FIELD),
+                    r.get(RC_DOB_FIELD),
                 )
                 created = created["response"]
                 if created[0]:
                     id = created[1]["id"]
-                    CID_map[rs["subject"]] = f"C{CID_MAGIC_NUMBER*int(id)}"
+                    CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
                 else:
                     print("Error?", vars(created))
 
         else:
-            print(f'SUBJECT {rs["subject"]} ENROLLMENT NOT COMPLETE')
+            print(f'SUBJECT {subject} ENROLLMENT NOT COMPLETE')
 
     # Map subject to CID
     for df in redcap_dfs.values():
@@ -89,11 +103,15 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
 def redcap_safe_dates(redcap_dfs, date_fields):
     """For subjects younger than 90, extract just years from REDCap DataFrame
     date fields and also convert to ages in days using enrollment DOB."""
+    dob_df = None
+    for df in redcap_dfs.values():
+        if RC_DOB_FIELD in df:
+            dob_df = df
+            break
+
     dobs = {
         e["subject"]: to_datetime(e[RC_DOB_FIELD], errors="coerce")
-        for e in redcap_dfs[RC_ENROLLMENT_FORM][
-            ["subject", RC_DOB_FIELD]
-        ].to_dict(orient="records")
+        for e in dob_df[["subject", RC_DOB_FIELD]].to_dict(orient="records")
     }
 
     def date_to_age_days(birthdate, date):
@@ -264,6 +282,7 @@ if __name__ == "__main__":
 
     rs = REDCapStudy(redcap_api_url, redcap_token)
     records_tree, errors = rs.get_records_tree()
+
     if errors:
         print(errors)
         sys.exit()

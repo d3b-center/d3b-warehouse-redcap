@@ -24,7 +24,9 @@ RC_ORG_OVERRIDE = None
 CID_MAGIC_NUMBER = None
 
 
-def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=True):
+def redcap_subjects_to_CIDs(
+    redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=True
+):
     """Replace REDCap DataFrame subject IDs with CIDs from the BRP-eHB"""
     subject_fields = {
         RC_ORG_FIELD,
@@ -73,11 +75,11 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol, cr
             r.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
         ):
             if ident in ehb_subjects:  # Subject already in BRP-eHB
-                print(f'Subject {subject} already in BRP-eHB')
+                print(f"Subject {subject} already in BRP-eHB")
                 id = ehb_subjects[ident]
                 CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
             elif create_if_new:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
-                print(f'Submitting subject {subject} to BRP-eHB... ⏳')
+                print(f"Submitting subject {subject} to BRP-eHB... ⏳")
                 created = brp.create_subject(
                     brp_protocol,
                     int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
@@ -93,10 +95,10 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol, cr
                 else:
                     print("Error?", vars(created))
             else:
-                print(f'Subject {subject} not found in BRP-eHB. Subject will not be warehoused.')
+                print(f"Subject {subject} not found in BRP-eHB will not be warehoused.")
 
         else:
-            print(f'SUBJECT {subject} ENROLLMENT NOT COMPLETE')
+            print(f"SUBJECT {subject} ENROLLMENT NOT COMPLETE")
 
     # Map subject to CID
     for df in redcap_dfs.values():
@@ -187,9 +189,7 @@ if __name__ == "__main__":
         "brp_token_env_key",
         help='Environment key storing the BRP API token (e.g. "BRP_TOKEN")',
     )
-    parser.add_argument(
-        "brp_protocol", help="BRP protocol number for the study"
-    )
+    parser.add_argument("brp_protocol", help="BRP protocol number for the study")
     parser.add_argument(
         "cid_magic_number_env_key",
         help="Environment key storing magic number for generating CIDs",
@@ -323,9 +323,7 @@ if __name__ == "__main__":
             if RC_ORG_FIELD in df:
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(raw2org)
 
-    identifier_fields = [
-        f["field_name"] for f in data_dictionary if f["identifier"]
-    ]
+    identifier_fields = [f["field_name"] for f in data_dictionary if f["identifier"]]
 
     date_fields = [
         d["field_name"]

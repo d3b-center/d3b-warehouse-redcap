@@ -358,7 +358,7 @@ if __name__ == "__main__":
         for instrument in redcap_dfs:
             if field in redcap_dfs[instrument]:
                 redactions.append(f"Redacting {instrument}.{field}")
-                del redcap_dfs[instrument][field]
+                redcap_dfs[instrument][field] = "[Could contain PHI]"
 
     for red in sorted(redactions):
         print(red)

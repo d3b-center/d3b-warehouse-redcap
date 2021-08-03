@@ -333,11 +333,16 @@ if __name__ == "__main__":
         if "date" in d["text_validation_type_or_show_slider_number"]
     ]
 
+    note_fields = [
+        d["field_name"] for d in data_dictionary if d["field_type"] == "notes"
+    ]
+
     redcap_safe_dates(redcap_dfs, date_fields)
 
     fields_to_redact = set(
         identifier_fields
         + date_fields
+        + note_fields
         + (args.redact_redcap_field or [])
         + [
             RC_FIRSTNAME_FIELD,

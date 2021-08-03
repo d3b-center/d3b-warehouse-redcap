@@ -24,18 +24,19 @@ RC_ORG_OVERRIDE = None
 CID_MAGIC_NUMBER = None
 
 
-def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
+def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=True):
     """Replace REDCap DataFrame subject IDs with CIDs from the BRP-eHB"""
     subject_fields = {
         RC_ORG_FIELD,
         RC_ORG_ID_FIELD,
-        RC_FIRSTNAME_FIELD,
-        RC_LASTNAME_FIELD,
-        RC_DOB_FIELD,
         f"{RC_ENROLLMENT_FORM}_complete",
     }
+
     if RC_ORG_OVERRIDE is not None:
         subject_fields.remove(RC_ORG_FIELD)
+
+    if create_if_new:
+        subject_fields |= {RC_FIRSTNAME_FIELD, RC_LASTNAME_FIELD, RC_DOB_FIELD}
 
     rc_subjects = {}
     found_fields = set()
@@ -75,7 +76,7 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
                 print(f'Subject {subject} already in BRP-eHB')
                 id = ehb_subjects[ident]
                 CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
-            else:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
+            elif create_if_new:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
                 print(f'Submitting subject {subject} to BRP-eHB... ⏳')
                 created = brp.create_subject(
                     brp_protocol,
@@ -91,6 +92,8 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
                     CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
                 else:
                     print("Error?", vars(created))
+            else:
+                print(f'Subject {subject} not found in BRP-eHB. Subject will not be warehoused.')
 
         else:
             print(f'SUBJECT {subject} ENROLLMENT NOT COMPLETE')
@@ -98,6 +101,8 @@ def redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol):
     # Map subject to CID
     for df in redcap_dfs.values():
         df["CID"] = df["subject"].map(CID_map)
+        # Remove subjects without CIDs
+        df.dropna(subset=["CID"], inplace=True)
 
 
 def redcap_safe_dates(redcap_dfs, date_fields):
@@ -258,9 +263,16 @@ if __name__ == "__main__":
         action="append",
         help="Redact this REDCap field (this argument is repeatable)",
     )
+    parser.add_argument(
+        "--only_warehouse_if_CID_already_exists",
+        required=False,
+        action="store_true",
+        help="Only warehouse subjects that already have CIDs",
+    )
 
     args = parser.parse_args()
 
+    create_if_new = not args.only_warehouse_if_CID_already_exists
     redcap_api_url = args.redcap_api_url
     redcap_token = os.getenv(args.redcap_token_env_key)
     brp_api_url = args.brp_api_url
@@ -307,9 +319,11 @@ if __name__ == "__main__":
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(org2raw)
 
     # Send new subjects to the BRP to get their CIDs.
-    redcap_subjects_to_CIDs(redcap_dfs, brp_api_url, brp_token, brp_protocol)
+    redcap_subjects_to_CIDs(
+        redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=create_if_new
+    )
 
-    # Now swap the orgs back.
+    # Now swap the orgs back in case we change our mind about redacting them later.
     if raw2org:
         for df in redcap_dfs.values():
             if RC_ORG_FIELD in df:

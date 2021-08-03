@@ -304,12 +304,6 @@ if __name__ == "__main__":
     # de-identify and redact
     data_dictionary = rs.get_data_dictionary()
 
-    date_fields = [
-        d["field_name"]
-        for d in data_dictionary
-        if "date" in d["text_validation_type_or_show_slider_number"]
-    ]
-
     # The BRP wants raw org values, not readable ones, so we need to swap those.
     raw2org = rs.get_selector_choice_map().get(RC_ORG_FIELD, {})
     org2raw = {v: k for k, v in raw2org.items()}
@@ -329,12 +323,22 @@ if __name__ == "__main__":
             if RC_ORG_FIELD in df:
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(raw2org)
 
+    identifier_fields = [
+        f["field_name"] for f in data_dictionary if f["identifier"]
+    ]
+
+    date_fields = [
+        d["field_name"]
+        for d in data_dictionary
+        if "date" in d["text_validation_type_or_show_slider_number"]
+    ]
+
     redcap_safe_dates(redcap_dfs, date_fields)
 
     fields_to_redact = set(
-        [f["field_name"] for f in data_dictionary if f["identifier"]]
+        identifier_fields
         + date_fields
-        + args.redact_redcap_field
+        + (args.redact_redcap_field or [])
         + [
             RC_FIRSTNAME_FIELD,
             RC_LASTNAME_FIELD,

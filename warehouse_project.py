@@ -139,13 +139,12 @@ def redcap_safe_dates(redcap_dfs, date_fields):
             if f in df:
                 df[f] = to_datetime(df[f], errors="coerce")
                 df[f] = df.apply(
-                    lambda r: discard_if_too_old(dobs[r["subject"]], r[f]),
-                    axis=1,
-                )
+                    lambda r: discard_if_too_old(dobs[r["subject"]], r[f]), axis=1
+                ).values.flatten()
                 df[f + "_year"] = df[f].apply(lambda x: x.year)
                 df[f + "_as_age"] = df.apply(
                     lambda r: date_to_age_days(dobs[r["subject"]], r[f]), axis=1
-                )
+                ).values.flatten()
 
 
 def submit_to_warehouse(warehouse_url, schema_name, dfs):

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -9,7 +10,9 @@ from d3b_redcap_api.redcap import REDCapStudy
 from dateutil import relativedelta
 from numpy import isnan
 from pandas import DataFrame, notnull, to_datetime
+from pangres import upsert
 from sqlalchemy import create_engine, schema
+from ulid import monotonic as ulid
 
 from d3b_warehouse_redcap.brp import BRP
 
@@ -147,7 +150,7 @@ def redcap_safe_dates(redcap_dfs, date_fields):
                 ).values.flatten()
 
 
-def submit_to_warehouse(warehouse_url, schema_name, dfs):
+def submit_to_warehouse(warehouse_url, schema_name, dfs, fields_to_mask):
     """Send our DataFrames to the warehouse DB"""
     db_engine = create_engine(warehouse_url)
 
@@ -155,6 +158,26 @@ def submit_to_warehouse(warehouse_url, schema_name, dfs):
         # requires schema creation privilege
         db_engine.execute(schema.CreateSchema(schema_name))
 
+    submissions = {}
+    for field, (domain, table) in fields_to_mask.items():
+        for name, df in dfs.items():
+            if field in df:
+                for v in df[field]:
+                    submissions.setdefault(table, []).append(
+                        {"private": v, "domain": domain}
+                    )
+
+    # submit identifiers to mask
+    for table, subs in submissions.items():
+        upsert(
+            engine=db_engine,
+            df=DataFrame(subs).set_index(["private"], drop=True),
+            table_name=table,
+            if_row_exists="ignore",
+            chunksize=10000,
+        )
+
+    # submit data
     for name, df in dfs.items():
         df.to_sql(
             name,
@@ -171,8 +194,9 @@ if __name__ == "__main__":
 
     class MyParser(argparse.ArgumentParser):
         def error(self, message):
-            sys.stderr.write(f"error: {message}\n\n")
-            self.print_help()
+            sys.stderr.write(f"\nerror: {message}\n\n")
+            if not isinstance(sys.exc_info()[1], argparse.ArgumentError):
+                self.print_help()
             sys.exit(2)
 
     parser = MyParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -257,10 +281,40 @@ if __name__ == "__main__":
         help="REDCap enrollment field that contains the subject's identifier within the identifying organization",
     )
     parser.add_argument(
-        "--redact_redcap_field",
+        "--redact",
         required=False,
         action="append",
-        help="Redact this REDCap field (this argument is repeatable)",
+        metavar="REDCAP_FIELD",
+        default=[],
+        help="Redact this REDCap field (this flag is repeatable)",
+    )
+
+    def split_on_eq(s):
+        ret = re.split("_*=_*", s.strip().replace(" ", "_"))
+        if len(ret) != 3:
+            raise argparse.ArgumentTypeError(
+                f"Value '{s}' must be in the form REDCAP_FIELD=DOMAIN_FOR_VALUE=WAREHOUSE_ID_TABLE"
+            )
+        ret = [ret[0], (ret[1], ret[2])]
+        return ret
+
+    parser.add_argument(
+        "--mask",
+        required=False,
+        action="append",
+        metavar="REDCAP_FIELD=DOMAIN_FOR_VALUE=WAREHOUSE_ID_TABLE",
+        default=[],
+        type=split_on_eq,
+        help="Fields to mask behind randomly generated GUIDs (this flag is repeatable)",
+    )
+    parser.add_argument(
+        "--fillmask",
+        required=False,
+        action="append",
+        metavar="REDCAP_FIELD=DOMAIN_FOR_VALUE=WAREHOUSE_ID_TABLE",
+        default=[],
+        type=split_on_eq,
+        help="Fields to backfill in REDCap with arbitrary stable IDs before warehousing. These then get masked. (this flag is repeatable)",
     )
     parser.add_argument(
         "--only_warehouse_if_CID_already_exists",
@@ -270,6 +324,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    fields_to_fillmask = dict(args.fillmask)
+    fields_to_mask = dict(args.mask)
+    fields_to_mask.update(fields_to_fillmask)
 
     create_if_new = not args.only_warehouse_if_CID_already_exists
     redcap_api_url = args.redcap_api_url
@@ -289,7 +347,7 @@ if __name__ == "__main__":
         RC_ORG_OVERRIDE = int(args.redcap_organization_override_value)
     RC_ORG_ID_FIELD = args.redcap_id_within_organization_field
 
-    # read from redcap
+    # ### read from redcap ###
 
     rs = REDCapStudy(redcap_api_url, redcap_token)
     records_tree, errors = rs.get_records_tree()
@@ -298,12 +356,92 @@ if __name__ == "__main__":
         print(errors)
         sys.exit()
 
+    data_dictionary = rs.get_data_dictionary()
     redcap_dfs = all_dfs(records_tree)
 
-    # de-identify and redact
-    data_dictionary = rs.get_data_dictionary()
+    # ### backfill auto-generated IDs ###
 
-    # The BRP wants raw org values, not readable ones, so we need to swap those.
+    def do_backfill(rs, dd, redcap_dfs, fields_to_fill):
+        """ Fills fields_to_fill with ULIDs if not already populated """
+        records = []
+        k = None
+        e = None
+        for f in fields_to_fill:
+            for d in dd:
+                if d["field_name"] == f:
+                    k = d["form_name"]
+                    break
+            for m in rs.get_instrument_event_mappings():
+                if m["form"] == k:
+                    e = m["unique_event_name"]
+                    break
+
+            assert e
+            assert k
+            assert k in redcap_dfs
+
+            df = redcap_dfs[k]
+            existing = {}
+            if f in df:
+                existing = set(df[f])
+                df[f] = df[f].apply(lambda x: ulid.new().str if not x else x)
+            else:
+                df[f] = [ulid.new().str for i in range(len(df))]
+
+            records.extend(
+                [
+                    {
+                        "field_name": f,
+                        "record": r["subject"],
+                        "redcap_event_name": e,
+                        "redcap_repeat_instance": r.get(f"subject_{k}_instance", ""),
+                        "redcap_repeat_instrument": k
+                        if r.get(f"subject_{k}_instance")
+                        else "",
+                        "value": r[f],
+                    }
+                    for r in df.to_dict(orient="records")
+                    if r[f] not in existing
+                ]
+            )
+
+        if records:
+            print(f"Sending {len(records)} new backfill values...")
+            print(rs.set_records(records))
+        else:
+            print("No new backfill values to send.")
+
+    do_backfill(rs, data_dictionary, redcap_dfs, fields_to_fillmask.keys())
+
+    # ### de-identify and redact ###
+
+    identifier_fields = [f["field_name"] for f in data_dictionary if f["identifier"]]
+    date_fields = [
+        d["field_name"]
+        for d in data_dictionary
+        if "date" in d["text_validation_type_or_show_slider_number"]
+    ]
+    note_fields = [
+        d["field_name"] for d in data_dictionary if d["field_type"] == "notes"
+    ]
+    fields_to_redact = (
+        set(
+            identifier_fields
+            + date_fields
+            + note_fields
+            + args.redact
+            + [
+                RC_FIRSTNAME_FIELD,
+                RC_LASTNAME_FIELD,
+                RC_DOB_FIELD,
+                RC_ORG_ID_FIELD,
+                RC_ORG_FIELD,
+            ]
+        )
+        - fields_to_mask.keys()
+    )
+
+    # The BRP-eHB wants raw org values, not readable ones, so we need to swap those.
     raw2org = rs.get_selector_choice_map().get(RC_ORG_FIELD, {})
     org2raw = {v: k for k, v in raw2org.items()}
     if org2raw:
@@ -311,7 +449,7 @@ if __name__ == "__main__":
             if RC_ORG_FIELD in df:
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(org2raw)
 
-    # Send new subjects to the BRP to get their CIDs.
+    # Get CIDs from the BRP-eHB.
     redcap_subjects_to_CIDs(
         redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=create_if_new
     )
@@ -322,50 +460,24 @@ if __name__ == "__main__":
             if RC_ORG_FIELD in df:
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(raw2org)
 
-    identifier_fields = [f["field_name"] for f in data_dictionary if f["identifier"]]
-
-    date_fields = [
-        d["field_name"]
-        for d in data_dictionary
-        if "date" in d["text_validation_type_or_show_slider_number"]
-    ]
-
-    note_fields = [
-        d["field_name"] for d in data_dictionary if d["field_type"] == "notes"
-    ]
-
     redcap_safe_dates(redcap_dfs, date_fields)
 
-    fields_to_redact = set(
-        identifier_fields
-        + date_fields
-        + note_fields
-        + (args.redact_redcap_field or [])
-        + [
-            RC_FIRSTNAME_FIELD,
-            RC_LASTNAME_FIELD,
-            RC_DOB_FIELD,
-            RC_ORG_ID_FIELD,
-            RC_ORG_FIELD,
-        ]
-    )
-
-    redactions = []
+    redaction_messages = []
     for field in fields_to_redact:
         for instrument in redcap_dfs:
             if field in redcap_dfs[instrument]:
-                redactions.append(f"Redacting {instrument}.{field}")
+                redaction_messages.append(f"Redacting {instrument}.{field}")
                 redcap_dfs[instrument][field] = "[Could contain PHI]"
 
-    for red in sorted(redactions):
-        print(red)
+    for m in sorted(redaction_messages):
+        print(m)
 
     for k, df in redcap_dfs.items():
         redcap_dfs[k] = df.where(notnull(df), None).convert_dtypes()
 
-    # submit data to warehouse
+    # ### submit data to warehouse ###
 
     project_info = rs.get_project_info()
     db_schema_name = f"redcap_{project_info['project_id']}"
     redcap_dfs["redcap_project_info"] = DataFrame.from_dict([project_info])
-    submit_to_warehouse(warehouse_url, db_schema_name, redcap_dfs)
+    submit_to_warehouse(warehouse_url, db_schema_name, redcap_dfs, fields_to_mask)

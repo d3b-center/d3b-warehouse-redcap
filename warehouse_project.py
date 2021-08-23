@@ -86,20 +86,24 @@ def redcap_subjects_to_CIDs(
                 CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
             elif create_if_new:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
                 print(f"Submitting subject {subject} to BRP-eHB... ⏳")
-                created = brp.create_subject(
-                    brp_protocol,
-                    int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
-                    r.get(RC_ORG_ID_FIELD),
-                    r.get(RC_FIRSTNAME_FIELD),
-                    r.get(RC_LASTNAME_FIELD),
-                    r.get(RC_DOB_FIELD),
-                )
-                created = created["response"]
-                if created[0]:
-                    id = created[1]["id"]
-                    CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
-                else:
-                    print("Error?", vars(created))
+                try:
+                    created = brp.create_subject(
+                        brp_protocol,
+                        int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
+                        r.get(RC_ORG_ID_FIELD),
+                        r.get(RC_FIRSTNAME_FIELD),
+                        r.get(RC_LASTNAME_FIELD),
+                        r.get(RC_DOB_FIELD),
+                    )
+                    created = created["response"]
+                    if created[0]:
+                        id = created[1]["id"]
+                        CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
+                    else:
+                        print("Error?", vars(created))
+                except Exception as e:
+                    print(f"ERROR! Failed to create subject {subject}!")
+                    print(f"REASON: {e.response.json()[2]}")
             else:
                 print(f"Subject {subject} not found in BRP-eHB will not be warehoused.")
 

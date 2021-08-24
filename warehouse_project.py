@@ -31,36 +31,38 @@ def redcap_subjects_to_CIDs(
     redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=True
 ):
     """Replace REDCap DataFrame subject IDs with CIDs from the BRP-eHB"""
-    subject_fields = {
+    required_fields = {
         RC_ORG_FIELD,
         RC_ORG_ID_FIELD,
         f"{RC_ENROLLMENT_FORM}_complete",
     }
 
     if RC_ORG_OVERRIDE is not None:
-        subject_fields.remove(RC_ORG_FIELD)
+        required_fields.remove(RC_ORG_FIELD)
 
     if create_if_new:
-        subject_fields |= {RC_FIRSTNAME_FIELD, RC_LASTNAME_FIELD, RC_DOB_FIELD}
+        # Then we're going to submit subjects that don't already have CIDs to
+        # the BRP-eHB, so we need all of the required fields
+        required_fields |= {RC_FIRSTNAME_FIELD, RC_LASTNAME_FIELD, RC_DOB_FIELD}
 
     rc_subjects = {}
     found_fields = set()
     try:
         for df in redcap_dfs.values():
-            for field in subject_fields:
+            for field in required_fields:
                 if field in df:
                     for r in df[["subject", field]].to_records(index=False):
                         rc_subjects.setdefault(r[0], {})[field] = r[1]
                     found_fields.add(field)
-                    if found_fields == subject_fields:
+                    if found_fields == required_fields:
                         raise StopIteration
     except StopIteration:
         pass
 
-    assert found_fields == subject_fields, (
+    assert found_fields == required_fields, (
         "We can't use the BRP-eHB API without the right REDCap enrollment"
         " fields. Are these correct?\n"
-        f"\t{subject_fields}"
+        f"\t{required_fields}"
     )
 
     brp = BRP(brp_api_url, brp_token)
@@ -75,6 +77,7 @@ def redcap_subjects_to_CIDs(
     for subject, r in rc_subjects.items():
         ident = (int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)), r.get(RC_ORG_ID_FIELD))
         if (None not in ident) and (
+            # We don't warehouse subjects that aren't marked complete by the CRU
             r.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
         ):
             if ident in ehb_subjects:  # Subject already in BRP-eHB
@@ -152,10 +155,8 @@ def redcap_safe_dates(redcap_dfs, date_fields):
                 ).values.flatten()
 
 
-def submit_to_warehouse(warehouse_url, schema_name, dfs, fields_to_mask):
+def submit_to_warehouse(db_engine, schema_name, dfs, fields_to_mask):
     """Send our DataFrames to the warehouse DB"""
-    db_engine = create_engine(warehouse_url)
-
     if not db_engine.dialect.has_schema(db_engine, schema_name):
         # requires schema creation privilege
         db_engine.execute(schema.CreateSchema(schema_name))
@@ -349,6 +350,9 @@ if __name__ == "__main__":
         RC_ORG_OVERRIDE = int(args.redcap_organization_override_value)
     RC_ORG_ID_FIELD = args.redcap_id_within_organization_field
 
+    # Create the db engine early to catch if our URL is malformed
+    db_engine = create_engine(warehouse_url)
+
     # ### read from redcap ###
 
     rs = REDCapStudy(redcap_api_url, redcap_token)
@@ -462,6 +466,7 @@ if __name__ == "__main__":
             if RC_ORG_FIELD in df:
                 df[RC_ORG_FIELD] = df[RC_ORG_FIELD].map(raw2org)
 
+    # Replace dates with year+age when safe
     redcap_safe_dates(redcap_dfs, date_fields)
 
     redaction_messages = []
@@ -482,4 +487,4 @@ if __name__ == "__main__":
     project_info = rs.get_project_info()
     db_schema_name = f"redcap_{project_info['project_id']}"
     redcap_dfs["redcap_project_info"] = DataFrame.from_dict([project_info])
-    submit_to_warehouse(warehouse_url, db_schema_name, redcap_dfs, fields_to_mask)
+    submit_to_warehouse(db_engine, db_schema_name, redcap_dfs, fields_to_mask)

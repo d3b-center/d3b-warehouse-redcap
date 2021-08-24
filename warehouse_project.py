@@ -127,7 +127,7 @@ def redcap_safe_dates(redcap_dfs, date_fields):
     def date_to_age_days(birthdate, date):
         days = (date - birthdate).days
         if not isnan(days):
-            return f"{days} days"
+            return days
         else:
             return None
 
@@ -137,6 +137,8 @@ def redcap_safe_dates(redcap_dfs, date_fields):
         else:
             return None
 
+    # create foo_year and foo_as_age (in days) values from each date that isn't
+    # more than 90 years after birthdate
     for df in redcap_dfs.values():
         for f in date_fields:
             if f in df:

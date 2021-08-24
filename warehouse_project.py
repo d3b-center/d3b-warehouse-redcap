@@ -152,10 +152,8 @@ def redcap_safe_dates(redcap_dfs, date_fields):
                 ).values.flatten()
 
 
-def submit_to_warehouse(warehouse_url, schema_name, dfs, fields_to_mask):
+def submit_to_warehouse(db_engine, schema_name, dfs, fields_to_mask):
     """Send our DataFrames to the warehouse DB"""
-    db_engine = create_engine(warehouse_url)
-
     if not db_engine.dialect.has_schema(db_engine, schema_name):
         # requires schema creation privilege
         db_engine.execute(schema.CreateSchema(schema_name))
@@ -349,6 +347,9 @@ if __name__ == "__main__":
         RC_ORG_OVERRIDE = int(args.redcap_organization_override_value)
     RC_ORG_ID_FIELD = args.redcap_id_within_organization_field
 
+    # Create the db engine early to catch if our URL is malformed
+    db_engine = create_engine(warehouse_url)
+
     # ### read from redcap ###
 
     rs = REDCapStudy(redcap_api_url, redcap_token)
@@ -482,4 +483,4 @@ if __name__ == "__main__":
     project_info = rs.get_project_info()
     db_schema_name = f"redcap_{project_info['project_id']}"
     redcap_dfs["redcap_project_info"] = DataFrame.from_dict([project_info])
-    submit_to_warehouse(warehouse_url, db_schema_name, redcap_dfs, fields_to_mask)
+    submit_to_warehouse(db_engine, db_schema_name, redcap_dfs, fields_to_mask)

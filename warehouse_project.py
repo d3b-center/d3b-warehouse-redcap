@@ -374,9 +374,11 @@ if __name__ == "__main__":
     def do_backfill(study, data_dictionary, redcap_dfs, fields_to_fill):
         """ Fills fields_to_fill with ULIDs if not already populated """
         records = []
-        form = None
-        event = None
+
+        # find the form and event for each of the given field names
         for field in fields_to_fill:
+            form = None
+            event = None
             for d in data_dictionary:
                 if d["field_name"] == field:
                     form = d["form_name"]
@@ -390,6 +392,7 @@ if __name__ == "__main__":
             assert form
             assert form in redcap_dfs
 
+            # add the new ULIDs where needed
             df = redcap_dfs[form]
             existing = {}
             if field in df:

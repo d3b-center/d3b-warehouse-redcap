@@ -371,53 +371,57 @@ if __name__ == "__main__":
 
     # ### backfill auto-generated IDs ###
 
-    def do_backfill(rs, dd, redcap_dfs, fields_to_fill):
+    def do_backfill(study, data_dictionary, redcap_dfs, fields_to_fill):
         """ Fills fields_to_fill with ULIDs if not already populated """
         records = []
-        k = None
-        e = None
-        for f in fields_to_fill:
-            for d in dd:
-                if d["field_name"] == f:
-                    k = d["form_name"]
+
+        # find the form and event for each of the given field names
+        for field in fields_to_fill:
+            form = None
+            event = None
+            for d in data_dictionary:
+                if d["field_name"] == field:
+                    form = d["form_name"]
                     break
-            for m in rs.get_instrument_event_mappings():
-                if m["form"] == k:
-                    e = m["unique_event_name"]
+            for m in study.get_instrument_event_mappings():
+                if m["form"] == form:
+                    event = m["unique_event_name"]
                     break
 
-            assert e
-            assert k
-            assert k in redcap_dfs
+            assert event
+            assert form
+            assert form in redcap_dfs
 
-            df = redcap_dfs[k]
+            # add the new ULIDs where needed
+            df = redcap_dfs[form]
             existing = {}
-            if f in df:
-                existing = set(df[f])
-                df[f] = df[f].apply(lambda x: ulid.new().str if not x else x)
+            if field in df:
+                dff = df[field].where(notnull(df[field]), None)
+                existing = set(dff.dropna()) - {""}
+                df[field] = dff.apply(lambda x: ulid.new().str if not x else x)
             else:
-                df[f] = [ulid.new().str for i in range(len(df))]
+                df[field] = [ulid.new().str for i in range(len(df))]
 
             records.extend(
                 [
                     {
-                        "field_name": f,
+                        "field_name": field,
                         "record": r["subject"],
-                        "redcap_event_name": e,
-                        "redcap_repeat_instance": r.get(f"subject_{k}_instance", ""),
-                        "redcap_repeat_instrument": k
-                        if r.get(f"subject_{k}_instance")
+                        "redcap_event_name": event,
+                        "redcap_repeat_instance": r.get(f"subject_{form}_instance", ""),
+                        "redcap_repeat_instrument": form
+                        if r.get(f"subject_{form}_instance")
                         else "",
-                        "value": r[f],
+                        "value": r[field],
                     }
                     for r in df.to_dict(orient="records")
-                    if r[f] not in existing
+                    if r[field] not in existing
                 ]
             )
 
         if records:
             print(f"Sending {len(records)} new backfill values...")
-            print(rs.set_records(records))
+            print(study.set_records(records))
         else:
             print("No new backfill values to send.")
 

@@ -393,8 +393,9 @@ if __name__ == "__main__":
             df = redcap_dfs[k]
             existing = {}
             if f in df:
-                existing = set(df[f])
-                df[f] = df[f].apply(lambda x: ulid.new().str if not x else x)
+                dff = df[f].where(notnull(df[f]), None)
+                existing = set(dff.dropna()) - {""}
+                df[f] = dff.apply(lambda x: ulid.new().str if not x else x)
             else:
                 df[f] = [ulid.new().str for i in range(len(df))]
 

@@ -118,5 +118,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Credentials
+secrets.json
+
 # Misc
 .vscode/

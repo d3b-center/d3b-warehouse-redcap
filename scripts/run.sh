@@ -26,20 +26,16 @@ if ls secrets.json 1> /dev/null 2>&1; then
         # Run ingest
         echo "Exporting $BRP_PROTOCOL..."
 
-        docker run \
-            -e REDCAP_TOKEN=$REDCAP_TOKEN \
-            -e $REDCAP_TOKEN=${!REDCAP_TOKEN} \
-            -e BRP_TOKEN=$BRP_TOKEN \
-            -e BRP_TOKEN_VALUE=$BRP_TOKEN_VALUE \
-            -e BRP_PROTOCOL=$BRP_PROTOCOL \
-            -e CID_MAGIC_NUMBER=$CID_MAGIC_NUMBER \
-            -e CID_MAGIC_NUMBER_VALUE=$CID_MAGIC_NUMBER_VALUE \
-            -e D3B_WAREHOUSE_DB_URL=$D3B_WAREHOUSE_DB_URL \
-            -e D3B_WAREHOUSE_DB_URL_VALUE=$D3B_WAREHOUSE_DB_URL_VALUE \
-            -e OPTIONAL_ARGUMENTS="$OPTIONAL_ARGUMENTS" \
-            --rm \
-            d3b-warehouse-redcap
-        
+	python3 warehouse_project.py \
+    		$REDCAP_TOKEN \
+    		$BRP_TOKEN \
+    		$BRP_PROTOCOL \
+    		$CID_MAGIC_NUMBER \
+    		$D3B_WAREHOUSE_DB_URL \
+    		$OPTIONAL_ARGUMENTS
+
+	echo "✅ $BRP_PROTOCOL has been exported!"
+
         echo "$BRP_PROTOCOL has been exported!"
 
     done

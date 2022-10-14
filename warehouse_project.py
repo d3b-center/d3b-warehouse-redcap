@@ -338,12 +338,12 @@ if __name__ == "__main__":
 
     create_if_new = not args.only_warehouse_if_CID_already_exists
     redcap_api_url = args.redcap_api_url
-    redcap_token = os.getenv(args.redcap_token_env_key)
+    redcap_token = os.getenv("REDCAP_TOKEN")
     brp_api_url = args.brp_api_url
-    brp_token = os.getenv(args.brp_token_env_key)
+    brp_token = os.getenv("BRP_TOKEN_VALUE")
     brp_protocol = args.brp_protocol
-    CID_MAGIC_NUMBER = int(os.getenv(args.cid_magic_number_env_key))
-    warehouse_url = os.getenv(args.warehouse_url_env_key)
+    CID_MAGIC_NUMBER = int(os.getenv("CID_MAGIC_NUMBER_VALUE"))
+    warehouse_url = os.getenv("D3B_WAREHOUSE_DB_URL_VALUE")
 
     RC_ENROLLMENT_FORM = args.redcap_enrollment_form
     RC_FIRSTNAME_FIELD = args.redcap_firstname_field

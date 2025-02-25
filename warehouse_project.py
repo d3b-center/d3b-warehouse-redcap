@@ -75,25 +75,31 @@ def redcap_subjects_to_CIDs(
     # Build mapping from redcap subject to CID
     CID_map = {}
     for subject, r in rc_subjects.items():
-        ident = (int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)), r.get(RC_ORG_ID_FIELD))
+        ident = (
+            int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
+            r.get(RC_ORG_ID_FIELD),
+        )
         if (None not in ident) and (
             # We don't warehouse subjects that aren't marked complete by the CRU
-            r.get(f"{RC_ENROLLMENT_FORM}_complete") == "Complete"
+            r.get(f"{RC_ENROLLMENT_FORM}_complete")
+            == "Complete"
         ):
             if ident in ehb_subjects:  # Subject already in BRP-eHB
                 print(f"Subject {subject} already in BRP-eHB")
                 id = ehb_subjects[ident]
                 CID_map[subject] = f"C{CID_MAGIC_NUMBER*int(id)}"
-            elif create_if_new:  # Subject not yet in BRP-eHB -> submit to BRP-eHB
+            elif (
+                create_if_new
+            ):  # Subject not yet in BRP-eHB -> submit to BRP-eHB
                 print(f"Submitting subject {subject} to BRP-eHB... ⏳")
                 try:
                     created = brp.create_subject(
-                        brp_protocol,
-                        int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
-                        r.get(RC_ORG_ID_FIELD),
-                        r.get(RC_FIRSTNAME_FIELD),
-                        r.get(RC_LASTNAME_FIELD),
-                        r.get(RC_DOB_FIELD),
+                        protocol_id=brp_protocol,
+                        organization=int(r.get(RC_ORG_FIELD, RC_ORG_OVERRIDE)),
+                        organization_subject_id=r.get(RC_ORG_ID_FIELD),
+                        first_name=r.get(RC_FIRSTNAME_FIELD),
+                        last_name=r.get(RC_LASTNAME_FIELD),
+                        dob=r.get(RC_DOB_FIELD),
                     )
                     created = created["response"]
                     if created[0]:
@@ -105,7 +111,9 @@ def redcap_subjects_to_CIDs(
                     print(f"ERROR! Failed to create subject {subject}!")
                     print(f"REASON: {e.response.json()[2]}")
             else:
-                print(f"Subject {subject} not found in BRP-eHB will not be warehoused.")
+                print(
+                    f"Subject {subject} not found in BRP-eHB will not be warehoused."
+                )
 
         else:
             print(f"SUBJECT {subject} ENROLLMENT NOT COMPLETE")
@@ -151,7 +159,8 @@ def redcap_safe_dates(redcap_dfs, date_fields):
             if f in df:
                 df[f] = to_datetime(df[f], errors="coerce")
                 df[f] = df.apply(
-                    lambda r: discard_if_too_old(dobs[r["subject"]], r[f]), axis=1
+                    lambda r: discard_if_too_old(dobs[r["subject"]], r[f]),
+                    axis=1,
                 ).values.flatten()
                 df[f + "_year"] = df[f].apply(lambda x: x.year)
                 df[f + "_as_age"] = df.apply(
@@ -219,7 +228,9 @@ if __name__ == "__main__":
         "brp_token_env_key",
         help='Environment key storing the BRP API token (e.g. "BRP_TOKEN")',
     )
-    parser.add_argument("brp_protocol", help="BRP protocol number for the study")
+    parser.add_argument(
+        "brp_protocol", help="BRP protocol number for the study"
+    )
     parser.add_argument(
         "cid_magic_number_env_key",
         help="Environment key storing magic number for generating CIDs",
@@ -372,7 +383,7 @@ if __name__ == "__main__":
     # ### backfill auto-generated IDs ###
 
     def do_backfill(study, data_dictionary, redcap_dfs, fields_to_fill):
-        """ Fills fields_to_fill with ULIDs if not already populated """
+        """Fills fields_to_fill with ULIDs if not already populated"""
         records = []
 
         # find the form and event for each of the given field names
@@ -408,10 +419,12 @@ if __name__ == "__main__":
                         "field_name": field,
                         "record": r["subject"],
                         "redcap_event_name": event,
-                        "redcap_repeat_instance": r.get(f"subject_{form}_instance", ""),
-                        "redcap_repeat_instrument": form
-                        if r.get(f"subject_{form}_instance")
-                        else "",
+                        "redcap_repeat_instance": r.get(
+                            f"subject_{form}_instance", ""
+                        ),
+                        "redcap_repeat_instrument": (
+                            form if r.get(f"subject_{form}_instance") else ""
+                        ),
                         "value": r[field],
                     }
                     for r in df.to_dict(orient="records")
@@ -429,7 +442,9 @@ if __name__ == "__main__":
 
     # ### de-identify and redact ###
 
-    identifier_fields = [f["field_name"] for f in data_dictionary if f["identifier"]]
+    identifier_fields = [
+        f["field_name"] for f in data_dictionary if f["identifier"]
+    ]
     date_fields = [
         d["field_name"]
         for d in data_dictionary
@@ -465,7 +480,11 @@ if __name__ == "__main__":
 
     # Get CIDs from the BRP-eHB.
     redcap_subjects_to_CIDs(
-        redcap_dfs, brp_api_url, brp_token, brp_protocol, create_if_new=create_if_new
+        redcap_dfs,
+        brp_api_url,
+        brp_token,
+        brp_protocol,
+        create_if_new=create_if_new,
     )
 
     # Now swap the orgs back in case we change our mind about redacting them later.
